@@ -44,9 +44,9 @@ public class ProcessQueue {
     public final static long REBALANCE_LOCK_INTERVAL = Long.parseLong(System.getProperty("rocketmq.client.rebalance.lockInterval", "20000"));
     private final static long PULL_MAX_IDLE_TIME = Long.parseLong(System.getProperty("rocketmq.client.pull.pullMaxIdleTime", "120000"));
     private final InternalLogger log = ClientLogger.getLog();
-    private final ReadWriteLock treeMapLock = new ReentrantReadWriteLock();
-    private final TreeMap<Long, MessageExt> msgTreeMap = new TreeMap<Long, MessageExt>();
-    private final AtomicLong msgCount = new AtomicLong();
+    private final ReadWriteLock treeMapLock = new ReentrantReadWriteLock();//读写锁
+    private final TreeMap<Long, MessageExt> msgTreeMap = new TreeMap<Long, MessageExt>();//消息容器
+    private final AtomicLong msgCount = new AtomicLong();//ProcessQueue总消息树
     private final AtomicLong msgSize = new AtomicLong();
     private final Lock consumeLock = new ReentrantLock();
     /**
@@ -54,10 +54,10 @@ public class ProcessQueue {
      */
     private final TreeMap<Long, MessageExt> consumingMsgOrderlyTreeMap = new TreeMap<Long, MessageExt>();
     private final AtomicLong tryUnlockTimes = new AtomicLong(0);
-    private volatile long queueOffsetMax = 0L;
-    private volatile boolean dropped = false;
-    private volatile long lastPullTimestamp = System.currentTimeMillis();
-    private volatile long lastConsumeTimestamp = System.currentTimeMillis();
+    private volatile long queueOffsetMax = 0L;//ProcessQueue队列最大偏移量
+    private volatile boolean dropped = false;//当前ProcessQueue是否被丢弃
+    private volatile long lastPullTimestamp = System.currentTimeMillis();//上一次拉取时间戳
+    private volatile long lastConsumeTimestamp = System.currentTimeMillis();//上一次消费时间戳
     private volatile boolean locked = false;
     private volatile long lastLockTimestamp = System.currentTimeMillis();
     private volatile boolean consuming = false;
@@ -72,6 +72,7 @@ public class ProcessQueue {
     }
 
     /**
+     * 移除消费超时消息
      * @param pushConsumer
      */
     public void cleanExpiredMsg(DefaultMQPushConsumer pushConsumer) {
@@ -124,6 +125,11 @@ public class ProcessQueue {
         }
     }
 
+    /**
+     * 添加消息
+     * @param msgs
+     * @return
+     */
     public boolean putMessage(final List<MessageExt> msgs) {
         boolean dispatchToConsume = false;
         try {
@@ -165,6 +171,10 @@ public class ProcessQueue {
         return dispatchToConsume;
     }
 
+    /**
+     * 获取消息最大间隔
+     * @return
+     */
     public long getMaxSpan() {
         try {
             this.treeMapLock.readLock().lockInterruptibly();
@@ -182,6 +192,11 @@ public class ProcessQueue {
         return 0;
     }
 
+    /**
+     * 移除消息
+     * @param msgs
+     * @return
+     */
     public long removeMessage(final List<MessageExt> msgs) {
         long result = -1;
         final long now = System.currentTimeMillis();
@@ -243,6 +258,9 @@ public class ProcessQueue {
         this.locked = locked;
     }
 
+    /**
+     * 将consumingMsgOrderlyTreeMap中消息重新放在msgTreeMap,并清空consumingMsgOrderlyTreeMap
+     */
     public void rollback() {
         try {
             this.treeMapLock.writeLock().lockInterruptibly();
@@ -257,6 +275,10 @@ public class ProcessQueue {
         }
     }
 
+    /**
+     * 将consumingMsgOrderlyTreeMap消息清除,表示成功处理该批消息
+     * @return
+     */
     public long commit() {
         try {
             this.treeMapLock.writeLock().lockInterruptibly();
@@ -280,6 +302,10 @@ public class ProcessQueue {
         return -1;
     }
 
+    /**
+     * 重新处理该批消息
+     * @param msgs
+     */
     public void makeMessageToConsumeAgain(List<MessageExt> msgs) {
         try {
             this.treeMapLock.writeLock().lockInterruptibly();
@@ -296,6 +322,11 @@ public class ProcessQueue {
         }
     }
 
+    /**
+     * 从processQueue中取出batchSize条消息
+     * @param batchSize
+     * @return
+     */
     public List<MessageExt> takeMessages(final int batchSize) {
         List<MessageExt> result = new ArrayList<MessageExt>(batchSize);
         final long now = System.currentTimeMillis();

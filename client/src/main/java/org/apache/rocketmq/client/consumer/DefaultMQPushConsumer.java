@@ -70,6 +70,7 @@ public class DefaultMQPushConsumer extends ClientConfig implements MQPushConsume
     protected final transient DefaultMQPushConsumerImpl defaultMQPushConsumerImpl;
 
     /**
+     * 消费者组
      * Consumers of the same role is required to have exactly same subscriptions and consumerGroup to correctly achieve
      * load balance. It's required and needs to be globally unique.
      * </p>
@@ -79,6 +80,7 @@ public class DefaultMQPushConsumer extends ClientConfig implements MQPushConsume
     private String consumerGroup;
 
     /**
+     * 消息消费模式
      * Message model defines the way how messages are delivered to each consumer clients.
      * </p>
      *
@@ -93,6 +95,7 @@ public class DefaultMQPushConsumer extends ClientConfig implements MQPushConsume
     private MessageModel messageModel = MessageModel.CLUSTERING;
 
     /**
+     * 指定消费开始偏移量（最大偏移量、最小偏移量、启动时间戳）开始消费
      * Consuming point on consumer booting.
      * </p>
      *
@@ -134,52 +137,62 @@ public class DefaultMQPushConsumer extends ClientConfig implements MQPushConsume
     private String consumeTimestamp = UtilAll.timeMillisToHumanString3(System.currentTimeMillis() - (1000 * 60 * 30));
 
     /**
+     * 集群模式下的消息队列负载策略
      * Queue allocation algorithm specifying how message queues are allocated to each consumer clients.
      */
     private AllocateMessageQueueStrategy allocateMessageQueueStrategy;
 
     /**
+     * 订阅信息
      * Subscription relationship
      */
     private Map<String /* topic */, String /* sub expression */> subscription = new HashMap<String, String>();
 
     /**
+     * 消息业务监听器
      * Message listener
      */
     private MessageListener messageListener;
 
     /**
+     * 消息消费进度存储器
      * Offset Storage
      */
     private OffsetStore offsetStore;
 
     /**
+     * 消费者最小线程数量
      * Minimum consumer thread number
      */
     private int consumeThreadMin = 20;
 
     /**
+     * 消费者最大线程数量
      * Max consumer thread number
      */
     private int consumeThreadMax = 20;
 
     /**
+     *
      * Threshold for dynamic adjustment of the number of thread pool
      */
     private long adjustThreadPoolNumsThreshold = 100000;
 
     /**
+     * 并发消息消费时处理队列最大跨度
      * Concurrently max span offset.it has no effect on sequential consumption
      */
     private int consumeConcurrentlyMaxSpan = 2000;
 
     /**
+     * 每1000次流控后打印流控日志
      * Flow control threshold on queue level, each message queue will cache at most 1000 messages by default,
      * Consider the {@code pullBatchSize}, the instantaneous value may exceed the limit
      */
     private int pullThresholdForQueue = 1000;
 
     /**
+     *
      * Limit the cached message size on queue level, each message queue will cache at most 100 MiB messages by default,
      * Consider the {@code pullBatchSize}, the instantaneous value may exceed the limit
      *
@@ -211,21 +224,25 @@ public class DefaultMQPushConsumer extends ClientConfig implements MQPushConsume
     private int pullThresholdSizeForTopic = -1;
 
     /**
+     * 推模式下任务间隔时间
      * Message pull Interval
      */
     private long pullInterval = 0;
 
     /**
+     * 每次传入MessageListener#consumerMessage中消息的数量
      * Batch consumption size
      */
     private int consumeMessageBatchMaxSize = 1;
 
     /**
+     * 推模式下任务拉取的条数,默认32条
      * Batch pull size
      */
     private int pullBatchSize = 32;
 
     /**
+     * 是否每次拉取消息都订阅消息
      * Whether update subscription relationship when every pull
      */
     private boolean postSubscriptionWhenPull = false;
@@ -236,6 +253,7 @@ public class DefaultMQPushConsumer extends ClientConfig implements MQPushConsume
     private boolean unitMode = false;
 
     /**
+     * 消息重试次数,-1代表16次
      * Max re-consume times. -1 means 16 times.
      * </p>
      *
@@ -250,6 +268,7 @@ public class DefaultMQPushConsumer extends ClientConfig implements MQPushConsume
     private long suspendCurrentQueueTimeMillis = 1000;
 
     /**
+     * 消息消费超时时间
      * Maximum amount of time in minutes a message may block the consuming thread.
      */
     private long consumeTimeout = 15;
