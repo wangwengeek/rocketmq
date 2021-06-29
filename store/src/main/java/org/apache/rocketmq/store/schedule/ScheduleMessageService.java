@@ -114,6 +114,7 @@ public class ScheduleMessageService extends ConfigManager {
         if (started.compareAndSet(false, true)) {
             super.load();
             this.timer = new Timer("ScheduleMessageTimerThread", true);
+            //遍历延迟队列创建定时任务,遍历延迟级别，根据延迟级别level从offsetTable中获取消费队列的消费进度。如果不存在，则使用0
             for (Map.Entry<Integer, Long> entry : this.delayLevelTable.entrySet()) {
                 Integer level = entry.getKey();
                 Long timeDelay = entry.getValue();
@@ -126,7 +127,7 @@ public class ScheduleMessageService extends ConfigManager {
                     this.timer.schedule(new DeliverDelayedMessageTimerTask(level, offset), FIRST_DELAY_TIME);
                 }
             }
-
+            //每隔10s持久化一次延迟队列的消息消费进度
             this.timer.scheduleAtFixedRate(new TimerTask() {
 
                 @Override
@@ -160,7 +161,7 @@ public class ScheduleMessageService extends ConfigManager {
     public String encode() {
         return this.encode(false);
     }
-
+    //加载延迟消息消费进度的加载与delayLevelTable的构造。延迟消息的进度默认存储路径为/store/config/delayOffset.json
     public boolean load() {
         boolean result = super.load();
         result = result && this.parseDelayLevel();
@@ -261,6 +262,7 @@ public class ScheduleMessageService extends ConfigManager {
         }
 
         public void executeOnTimeup() {
+            //根据队列ID与延迟主题查找消息消费队列
             ConsumeQueue cq =
                 ScheduleMessageService.this.defaultMessageStore.findConsumeQueue(TopicValidator.RMQ_SYS_SCHEDULE_TOPIC,
                     delayLevel2QueueId(delayLevel));
@@ -268,12 +270,14 @@ public class ScheduleMessageService extends ConfigManager {
             long failScheduleOffset = offset;
 
             if (cq != null) {
+                //根据偏移量从消息消费队列中获取当前队列中所有有效的消息
                 SelectMappedBufferResult bufferCQ = cq.getIndexBuffer(this.offset);
                 if (bufferCQ != null) {
                     try {
                         long nextOffset = offset;
                         int i = 0;
                         ConsumeQueueExt.CqExtUnit cqExtUnit = new ConsumeQueueExt.CqExtUnit();
+                        //遍历ConsumeQueue,解析消息队列中消息
                         for (; i < bufferCQ.getSize(); i += ConsumeQueue.CQ_STORE_UNIT_SIZE) {
                             long offsetPy = bufferCQ.getByteBuffer().getLong();
                             int sizePy = bufferCQ.getByteBuffer().getInt();
@@ -299,6 +303,7 @@ public class ScheduleMessageService extends ConfigManager {
                             long countdown = deliverTimestamp - now;
 
                             if (countdown <= 0) {
+                                //根据消息偏移量与消息大小,从CommitLog中查找消息.
                                 MessageExt msgExt =
                                     ScheduleMessageService.this.defaultMessageStore.lookMessageByOffset(
                                         offsetPy, sizePy);
