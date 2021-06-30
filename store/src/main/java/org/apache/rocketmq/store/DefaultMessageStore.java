@@ -1311,7 +1311,7 @@ public class DefaultMessageStore implements MessageStore {
     }
 
     private void addScheduleTask() {
-
+        //每隔10s调度一次清除文件
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
             @Override
             public void run() {
@@ -1361,7 +1361,9 @@ public class DefaultMessageStore implements MessageStore {
     }
 
     private void cleanFilesPeriodically() {
+        //清除存储文件
         this.cleanCommitLogService.run();
+        //清除消息消费队列文件
         this.cleanConsumeQueueService.run();
     }
 
@@ -1647,9 +1649,13 @@ public class DefaultMessageStore implements MessageStore {
         }
 
         private void deleteExpiredFiles() {
+            //删除的数量
             int deleteCount = 0;
+            //文件保留的时间
             long fileReservedTime = DefaultMessageStore.this.getMessageStoreConfig().getFileReservedTime();
+            //删除物理文件的间隔
             int deletePhysicFilesInterval = DefaultMessageStore.this.getMessageStoreConfig().getDeleteCommitLogFilesInterval();
+            //线程被占用,第一次拒绝删除后能保留的最大时间,超过该时间,文件将被强制删除
             int destroyMapedFileIntervalForcibly = DefaultMessageStore.this.getMessageStoreConfig().getDestroyMapedFileIntervalForcibly();
 
             boolean timeup = this.isTimeToDelete();
@@ -1657,7 +1663,7 @@ public class DefaultMessageStore implements MessageStore {
             boolean manualDelete = this.manualDeleteFileSeveralTimes > 0;
 
             if (timeup || spacefull || manualDelete) {
-
+                //执行删除逻辑
                 if (manualDelete)
                     this.manualDeleteFileSeveralTimes--;
 
@@ -1708,18 +1714,21 @@ public class DefaultMessageStore implements MessageStore {
         }
 
         private boolean isSpaceToDelete() {
+            //磁盘分区的最大使用量
             double ratio = DefaultMessageStore.this.getMessageStoreConfig().getDiskMaxUsedSpaceRatio() / 100.0;
-
+            //是否需要立即执行删除过期文件操作
             cleanImmediately = false;
 
             {
+                //当前CommitLog目录所在的磁盘分区的磁盘使用率
                 double physicRatio = UtilAll.getDiskPartitionSpaceUsedPercent(getStorePathPhysic());
+                //diskSpaceWarningLevelRatio:磁盘使用率警告阈值,默认0.90
                 if (physicRatio > diskSpaceWarningLevelRatio) {
                     boolean diskok = DefaultMessageStore.this.runningFlags.getAndMakeDiskFull();
                     if (diskok) {
                         DefaultMessageStore.log.error("physic disk maybe full soon " + physicRatio + ", so mark disk full");
                     }
-
+                    //diskSpaceCleanForciblyRatio:强制清除阈值,默认0.85
                     cleanImmediately = true;
                 } else if (physicRatio > diskSpaceCleanForciblyRatio) {
                     cleanImmediately = true;
