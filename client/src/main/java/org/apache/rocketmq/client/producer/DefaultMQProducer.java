@@ -90,6 +90,7 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
 
     /**
      * Compress message body threshold, namely, message body larger than 4k will be compressed on default.
+     * 消息体超过该值则启用压缩，默认4k
      */
     private int compressMsgBodyOverHowmuch = 1024 * 4;
 
@@ -97,6 +98,7 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
      * Maximum number of retry to perform internally before claiming sending failure in synchronous mode. </p>
      *
      * This may potentially cause message duplication which is up to application developers to resolve.
+     * 同步方式发送消息重试次数，默认为2，总共执行3次
      */
     private int retryTimesWhenSendFailed = 2;
 
@@ -104,11 +106,13 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
      * Maximum number of retry to perform internally before claiming sending failure in asynchronous mode. </p>
      *
      * This may potentially cause message duplication which is up to application developers to resolve.
+     * 异步方法发送消息重试次数，默认为2
      */
     private int retryTimesWhenSendAsyncFailed = 2;
 
     /**
      * Indicate whether to retry another broker on sending failure internally.
+     * 消息重试时选择另外一个Broker时，是否不等待存储结果就返回，默认为false
      */
     private boolean retryAnotherBrokerWhenNotStoreOK = false;
 
@@ -968,16 +972,20 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
     private MessageBatch batch(Collection<Message> msgs) throws MQClientException {
         MessageBatch msgBatch;
         try {
+            //将集合消息封装到MessageBatch
             msgBatch = MessageBatch.generateFromList(msgs);
+            //遍历消息集合,检查消息合法性,设置消息ID,设置Topic
             for (Message message : msgBatch) {
                 Validators.checkMessage(message, this);
                 MessageClientIDSetter.setUniqID(message);
                 message.setTopic(withNamespace(message.getTopic()));
             }
+            //压缩消息,设置消息body
             msgBatch.setBody(msgBatch.encode());
         } catch (Exception e) {
             throw new MQClientException("Failed to initiate the MessageBatch", e);
         }
+        //设置msgBatch的topic
         msgBatch.setTopic(withNamespace(msgBatch.getTopic()));
         return msgBatch;
     }
