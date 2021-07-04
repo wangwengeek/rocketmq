@@ -128,15 +128,20 @@ public class TransactionalMessageServiceImpl implements TransactionalMessageServ
         AbstractTransactionalMessageCheckListener listener) {
         try {
             String topic = TopicValidator.RMQ_SYS_TRANS_HALF_TOPIC;
+            //获取 RMQ_SYS_TRANS_HALF_TOPIC 的所有MessageQueue（一个MessageQueue对应一个ConsumerQueue）
             Set<MessageQueue> msgQueues = transactionalMessageBridge.fetchMessageQueues(topic);
             if (msgQueues == null || msgQueues.size() == 0) {
                 log.warn("The queue of topic is empty :" + topic);
                 return;
             }
             log.debug("Check topic={}, queues={}", topic, msgQueues);
+            //为每一个ConsumerQueue执行检查逻辑，检查逻辑找到需要进行回查的half消息，并发起回查请求
             for (MessageQueue messageQueue : msgQueues) {
                 long startTime = System.currentTimeMillis();
+                //根据HALF_TOPIC的MessageQueue，获取OP_HALF_TOPIC对应的MessageQueue。根据queueId对应
+                //（实际上HALF_TOPIC 和 OP_HALF_TOPIC各只有一个MessageQueue）
                 MessageQueue opQueue = getOpQueue(messageQueue);
+                //获取两个MessageQueue的当前消费进度（逻辑offset）
                 long halfOffset = transactionalMessageBridge.fetchConsumeOffset(messageQueue);
                 long opOffset = transactionalMessageBridge.fetchConsumeOffset(opQueue);
                 log.info("Before check, the queue={} msgOffset={} opOffset={}", messageQueue, halfOffset, opOffset);
@@ -145,7 +150,11 @@ public class TransactionalMessageServiceImpl implements TransactionalMessageServ
                         halfOffset, opOffset);
                     continue;
                 }
-
+                //fillOpRemoveMap中对每一个拉取到的OP消息：比对OP消息内容（对应half消息的逻辑队列偏移量）和half消息队列当前偏移量
+                //1.若果小于half队列当前偏移量，说明该OP消息对应的half消息已经回查过，将OP消息的逻辑队列偏移量放入doneOpOffset。
+                //这个doneOpOffset只做后面推进OP逻辑队列位点使用。
+                //2.如果大于或等于half队列当前偏移量，则将【halfOffSet?<--->opOffset】存入removeMap中。当前的half消息需不需要回查就看它在不在
+                // 这个removeMap中
                 List<Long> doneOpOffset = new ArrayList<>();
                 HashMap<Long, Long> removeMap = new HashMap<>();
                 PullResult pullResult = fillOpRemoveMap(removeMap, opQueue, opOffset, halfOffset, doneOpOffset);
@@ -159,15 +168,19 @@ public class TransactionalMessageServiceImpl implements TransactionalMessageServ
                 long newOffset = halfOffset;
                 long i = halfOffset;
                 while (true) {
+                    //对于 RMQ_SYS_TRANS_HALF_TOPIC 每一个MessageQueue执行检查逻辑时间不能超过60s
                     if (System.currentTimeMillis() - startTime > MAX_PROCESS_TIME_LIMIT) {
                         log.info("Queue={} process time reach max={}", messageQueue, MAX_PROCESS_TIME_LIMIT);
                         break;
                     }
+                    //如果removeMap中包含当前MessageQueue的当前offSet，说明该offSet对应的half消息已经被committed或roback
+                    //不需要回查了，继续下一个offset检查（i++）
                     if (removeMap.containsKey(i)) {
                         log.debug("Half offset {} has been committed/rolled back", i);
                         Long removedOpOffset = removeMap.remove(i);
                         doneOpOffset.add(removedOpOffset);
                     } else {
+                        //获取当前MessageQueue当前offset对应的half消息
                         GetResult getResult = getHalfMsg(messageQueue, i);
                         MessageExt msgExt = getResult.getMsg();
                         if (msgExt == null) {
@@ -186,13 +199,16 @@ public class TransactionalMessageServiceImpl implements TransactionalMessageServ
                                 continue;
                             }
                         }
-
+                        //如果回查次数超过设定的最大值（默认15次）或者当前half消息落盘时间超过commitLog文件保存时间（72小时）
+                        //则放弃该half消息回查。在该队列的检查逻辑结束后更新其offset，今后也不再回查
                         if (needDiscard(msgExt, transactionCheckMax) || needSkip(msgExt)) {
                             listener.resolveDiscardMsg(msgExt);
                             newOffset = i + 1;
                             i++;
                             continue;
                         }
+                        //在当前MessageQueue的检查逻辑开始后，如果half消息写入，会发生这种情况。
+                        //因为ConsumerQueue是按照顺序构建的，所以该MessageQ后面的消息也都不会回查了
                         if (msgExt.getStoreTimestamp() >= startTime) {
                             log.debug("Fresh stored. the miss offset={}, check it later, store={}", i,
                                 new Date(msgExt.getStoreTimestamp()));
@@ -202,16 +218,21 @@ public class TransactionalMessageServiceImpl implements TransactionalMessageServ
                         long valueOfCurrentMinusBorn = System.currentTimeMillis() - msgExt.getBornTimestamp();
                         long checkImmunityTime = transactionTimeout;
                         String checkImmunityTimeStr = msgExt.getUserProperty(MessageConst.PROPERTY_CHECK_IMMUNITY_TIME_IN_SECONDS);
+                        //如果生产者侧对特定消息设置了首次回查免疫时间
                         if (null != checkImmunityTimeStr) {
                             checkImmunityTime = getImmunityTime(checkImmunityTimeStr, transactionTimeout);
                             if (valueOfCurrentMinusBorn < checkImmunityTime) {
                                 if (checkPrepareQueueOffset(removeMap, doneOpOffset, msgExt)) {
+                                    //既然还没有到回查免疫时间，为什么还要进行一次if判断
+                                    //对于非首次回查的消息，免疫时间不起作用
                                     newOffset = i + 1;
                                     i++;
                                     continue;
                                 }
                             }
                         } else {
+                            //如果生产者侧没有设置首次回查免疫时间：如果在免疫时间内，则跳过该half消息以及后续所有的half消息回查(因为同一ConsumerQueue中消息
+                            // 是顺序的)
                             if ((0 <= valueOfCurrentMinusBorn) && (valueOfCurrentMinusBorn < checkImmunityTime)) {
                                 log.debug("New arrived, the miss offset={}, check it later checkImmunity={}, born={}", i,
                                     checkImmunityTime, new Date(msgExt.getBornTimestamp()));
@@ -219,6 +240,7 @@ public class TransactionalMessageServiceImpl implements TransactionalMessageServ
                             }
                         }
                         List<MessageExt> opMsg = pullResult.getMsgFoundList();
+                        //前面所有条件都满足了，貌似就可以回查了，但为什么这儿又加了条件判断？
                         boolean isNeedCheck = (opMsg == null && valueOfCurrentMinusBorn > checkImmunityTime)
                             || (opMsg != null && (opMsg.get(opMsg.size() - 1).getBornTimestamp() - startTime > transactionTimeout))
                             || (valueOfCurrentMinusBorn <= -1);
@@ -241,6 +263,7 @@ public class TransactionalMessageServiceImpl implements TransactionalMessageServ
                 if (newOffset != halfOffset) {
                     transactionalMessageBridge.updateConsumeOffset(messageQueue, newOffset);
                 }
+                //计算OP逻辑队列需要往前推进的位置
                 long newOpOffset = calculateOpOffset(doneOpOffset, opOffset);
                 if (newOpOffset != opOffset) {
                     transactionalMessageBridge.updateConsumeOffset(opQueue, newOpOffset);

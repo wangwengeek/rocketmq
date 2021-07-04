@@ -1268,6 +1268,7 @@ public class DefaultMQProducerImpl implements MQProducerInner {
         final LocalTransactionExecuter localTransactionExecuter, final Object arg)
         throws MQClientException {
         TransactionListener transactionListener = getCheckListener();
+        //两种使用方法：1.实现TransactionListener接口 2.实现 LocalTransactionExecuter和TransactionCheckListener接口
         if (null == localTransactionExecuter && null == transactionListener) {
             throw new MQClientException("tranExecutor is null", null);
         }
@@ -1280,7 +1281,11 @@ public class DefaultMQProducerImpl implements MQProducerInner {
         Validators.checkMessage(msg, this.defaultMQProducer);
 
         SendResult sendResult = null;
+        //标明是事务消息
         MessageAccessor.putProperty(msg, MessageConst.PROPERTY_TRANSACTION_PREPARED, "true");
+        //设置PGROUP属性为生产者组ID（对于回查逻辑非常重要）
+        //1.broker向生产者端发送回查请求时，通过PGROUP属性值来寻找channel
+        //2.生产者端通过PGROUP属性值从producerTable中找生产者实例，用来执行查询本地事务状态逻辑
         MessageAccessor.putProperty(msg, MessageConst.PROPERTY_PRODUCER_GROUP, this.defaultMQProducer.getProducerGroup());
         try {
             sendResult = this.send(msg);
@@ -1293,6 +1298,7 @@ public class DefaultMQProducerImpl implements MQProducerInner {
         switch (sendResult.getSendStatus()) {
             case SEND_OK: {
                 try {
+                    //如果设置了transactionId，将它放入消息的properties中（目前没有用到），否则以UNIQ_KEY作为消息transactionId
                     if (sendResult.getTransactionId() != null) {
                         msg.putUserProperty("__transactionId__", sendResult.getTransactionId());
                     }
@@ -1300,6 +1306,7 @@ public class DefaultMQProducerImpl implements MQProducerInner {
                     if (null != transactionId && !"".equals(transactionId)) {
                         msg.setTransactionId(transactionId);
                     }
+                    //执行很低事务逻辑
                     if (null != localTransactionExecuter) {
                         localTransactionState = localTransactionExecuter.executeLocalTransactionBranch(msg, arg);
                     } else if (transactionListener != null) {
@@ -1331,6 +1338,7 @@ public class DefaultMQProducerImpl implements MQProducerInner {
         }
 
         try {
+            //发起END_TRANSACTION请求（如果本地事务状态为COMMIT_MESSAGE则为提交，如果UNKNOW则什么也不做，如果为ROLLBACK_MESSAGE则为回滚）
             this.endTransaction(msg, sendResult, localTransactionState, localException);
         } catch (Exception e) {
             log.warn("local transaction execute " + localTransactionState + ", but end broker transaction failed", e);
