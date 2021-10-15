@@ -54,7 +54,9 @@ public class NamesrvStartup {
     public static NamesrvController main0(String[] args) {
 
         try {
+            //创建命名服务控制器
             NamesrvController controller = createNamesrvController(args);
+            //启动控制器
             start(controller);
             String tip = "The Name Server boot success. serializeType=" + RemotingCommand.getSerializeTypeConfigInThisServer();
             log.info(tip);
@@ -78,15 +80,19 @@ public class NamesrvStartup {
             System.exit(-1);
             return null;
         }
-
+        //跟name server有关配置的参数封装的对象
         final NamesrvConfig namesrvConfig = new NamesrvConfig();
+        //跟Netty相关配置参数封装的对象
         final NettyServerConfig nettyServerConfig = new NettyServerConfig();
+        //指定netty服务器监听端口 9876
         nettyServerConfig.setListenPort(9876);
+        //如果命令行参数中有c，则表示指定了NameServer的配置文件，需要解析加载其中的配置项
         if (commandLine.hasOption('c')) {
             String file = commandLine.getOptionValue('c');
             if (file != null) {
                 InputStream in = new BufferedInputStream(new FileInputStream(file));
                 properties = new Properties();
+                //将配置文件的配置信息封装到properties中
                 properties.load(in);
                 MixAll.properties2Object(properties, namesrvConfig);
                 MixAll.properties2Object(properties, nettyServerConfig);
@@ -97,7 +103,7 @@ public class NamesrvStartup {
                 in.close();
             }
         }
-
+        //p 表示打印配置信息
         if (commandLine.hasOption('p')) {
             InternalLogger console = InternalLoggerFactory.getLogger(LoggerName.NAMESRV_CONSOLE_NAME);
             MixAll.printObjectProperties(console, namesrvConfig);
@@ -136,13 +142,13 @@ public class NamesrvStartup {
         if (null == controller) {
             throw new IllegalArgumentException("NamesrvController is null");
         }
-
+        //首先初始化controller
         boolean initResult = controller.initialize();
         if (!initResult) {
             controller.shutdown();
             System.exit(-3);
         }
-
+        //添加关闭的钩子函数
         Runtime.getRuntime().addShutdownHook(new ShutdownHookThread(log, new Callable<Void>() {
             @Override
             public Void call() throws Exception {
@@ -150,7 +156,7 @@ public class NamesrvStartup {
                 return null;
             }
         }));
-
+        //启动controller
         controller.start();
 
         return controller;
