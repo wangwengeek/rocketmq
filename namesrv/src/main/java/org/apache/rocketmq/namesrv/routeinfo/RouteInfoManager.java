@@ -145,6 +145,7 @@ public class RouteInfoManager {
                 }
 
                 String oldAddr = brokerData.getBrokerAddrs().put(brokerId, brokerAddr);
+                //是否第一次注册
                 registerFirst = registerFirst || (null == oldAddr);
 
                 if (null != topicConfigWrapper
