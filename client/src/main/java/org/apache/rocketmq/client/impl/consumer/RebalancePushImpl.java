@@ -161,14 +161,17 @@ public class RebalancePushImpl extends RebalanceImpl {
             case CONSUME_FROM_LAST_OFFSET: {
                 long lastOffset = offsetStore.readOffset(mq, ReadOffsetType.READ_FROM_STORE);
                 if (lastOffset >= 0) {
+//                  如果返回的偏移量大于等于 0，则直接使用该 offset，大于 等于 0，表示查询到有效的消息消费进度，从该有效进度开始消费
                     result = lastOffset;
                 }
                 // First start,no offset
-                else if (-1 == lastOffset) {
+                else if (-1 == lastOffset) {//如果 lastOffset 为-1,表示当前并未存储其有效偏移量，可以理解为第一次 消费
                     if (mq.getTopic().startsWith(MixAll.RETRY_GROUP_TOPIC_PREFIX)) {
+                        //如果是消费组重试主题，从重试队列偏移量为 0 开始消费
                         result = 0L;
                     } else {
                         try {
+                            //如果是普通主题，则从 队列当前的最大的有效偏移量开始消费，即 CONSUME_FROM_LAST_OFFSET 语义 的实现
                             result = this.mQClientFactory.getMQAdminImpl().maxOffset(mq);
                         } catch (MQClientException e) {
                             log.warn("Compute consume offset from last offset exception, mq={}, exception={}", mq, e);
